@@ -1,0 +1,49 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+.pycache/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.opencode/
+opencode.json
+
+# Tools / Packages / Testing
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.pyre/
+.mypy_cache/
+.ruff_cache/
+
+# Logs and databases
+*.log
+*.sqlite
+*.sqlite3
+
+# Trading / Data specific
+data_set/
+*.parquet
+*.csv
+*.h5
