@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "historical-data-fetcher"
+version = "1.0.0"
+description = "Provider-agnostic historical data fetcher that normalizes to Nautilus Trader backtest Parquet schema."
+requires-python = ">=3.14"
+dependencies = [
+    "nautilus_trader",
+    "python-dotenv",
+    "pydantic",
+    "pydantic-settings",
+    "pandas",
+    "pyarrow",
+    "pyotp",
+    "requests",
+    "playwright",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

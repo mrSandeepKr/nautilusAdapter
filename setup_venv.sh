@@ -29,9 +29,12 @@ EOF
 # Clean up sed backup
 rm -f venv/bin/activate.bak
 
-echo "Installing requirements..."
+echo "Installing package (editable) and dependencies from pyproject.toml..."
 source venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .
+
+echo "Installing Playwright Chromium browser (required by Upstox auth)..."
+playwright install chromium
 
 echo "Done! You can now run: source venv/bin/activate"

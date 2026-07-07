@@ -44,6 +44,13 @@ build/
 
 # Trading / Data specific
 data_set/
+data_fetched/
 *.parquet
 *.csv
 *.h5
+
+# Fetched-data access token cache
+upstox_access_token.txt
+
+# Local verification script — never check in (touches live credentials)
+/verify.py
