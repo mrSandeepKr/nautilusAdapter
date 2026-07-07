@@ -12,5 +12,6 @@
 
 ## Architecture
 
-- every functionality gets its own package
-- providers are independent of the system
+- .env file is functional and correctly written 
+- Leverage existing functions rather than creating yours
+- Ensure separation of concern

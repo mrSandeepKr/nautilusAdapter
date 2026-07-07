@@ -10,16 +10,15 @@ import pyotp
 import pytz
 import requests
 
-from historical_data_fetcher.providers.upstox.exceptions import (
+from provider.upstox.exceptions import (
     MissingAuthenticationError,
     RedirectChainError,
     TOTPGenerationError,
     TokenExchangeError,
     TwoFactorAuthError,
 )
+from provider.upstox.settings import UpstoxSettings
 
-_AUTHORIZE_URL = "https://api.upstox.com/v2/login/authorization/dialog"
-_TOKEN_URL = "https://api.upstox.com/v2/login/authorization/token"
 _LOGIN_TIMEOUT_MS = 90_000
 _FIELD_TIMEOUT_MS = 25_000
 _IST = pytz.timezone("Asia/Kolkata")
@@ -96,23 +95,20 @@ class UpstoxAuthenticator:
 
     def __init__(
         self,
-        mobile_no: str,
-        pin: str,
-        totp_secret: str,
-        api_key: str,
-        api_secret: str,
-        redirect_uri: str,
-        token_cache_path: Path,
+        settings: UpstoxSettings,
         use_cache: bool = True,
     ) -> None:
-        self.mobile_no = mobile_no
-        self.pin = pin
-        self.totp_secret = totp_secret
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.redirect_uri = redirect_uri
+        self.settings = settings
+        self.mobile_no = settings.UPSTOX_PHONE_NUMBER
+        self.pin = settings.UPSTOX_PIN_CODE
+        self.totp_secret = settings.UPSTOX_TOTP_SECRET
+        self.api_key = settings.UPSTOX_API_KEY
+        self.api_secret = settings.UPSTOX_API_SECRET
+        self.redirect_uri = settings.UPSTOX_REDIRECT_URI
+        self._authorize_url = settings.authorize_url
+        self._token_url = settings.token_url
         self._use_cache = use_cache
-        self._cache = _TokenManager(token_cache_path)
+        self._cache = _TokenManager(settings.upstox_access_token_path)
         self._lock = threading.Lock()
 
     def get_token(self, *, force_refresh: bool = False) -> str:
@@ -141,7 +137,7 @@ class UpstoxAuthenticator:
             "redirect_uri": self.redirect_uri,
             "state": secrets.token_urlsafe(16),
         }
-        return f"{_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
+        return f"{self._authorize_url}?{urllib.parse.urlencode(params)}"
 
     def _run_login_flow(self) -> str:
         try:
@@ -224,7 +220,7 @@ class UpstoxAuthenticator:
             "grant_type": "authorization_code",
         }
         try:
-            response = requests.post(_TOKEN_URL, data=payload, timeout=15)
+            response = requests.post(self._token_url, data=payload, timeout=15)
         except requests.RequestException as exc:
             raise TokenExchangeError(
                 f"Network error during token exchange: {exc}"

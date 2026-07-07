@@ -2,7 +2,7 @@
 
 Usage::
 
-    from historical_data_fetcher.providers.upstox.instrument_store import (
+    from provider.upstox.instrument_store import (
         InstrumentStore,
     )
 

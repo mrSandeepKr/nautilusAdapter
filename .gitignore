@@ -51,6 +51,3 @@ data_fetched/
 
 # Fetched-data access token cache
 upstox_access_token.txt
-
-# Local verification script — never check in (touches live credentials)
-/verify.py
