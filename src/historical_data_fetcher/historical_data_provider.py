@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -74,6 +77,9 @@ class HistoricalDataProvider:
         from_date: str,
         to_date: str,
     ) -> pd.DataFrame:
+        logger.info(
+            "Fetching %s %s-%s (%s)", instrument, from_date, to_date, interval
+        )
         df = self._fetcher.fetch_historical_data(
             instrument, interval, from_date, to_date
         )
