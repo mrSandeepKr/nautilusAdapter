@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 from historical_data_fetcher.interfaces import HistoricalDataFetcher
 from utility.nautilus_utility import empty_nautilus_frame
-from historical_data_fetcher.storage import DataStore
+from historical_data_fetcher.historical_data_store import HistoricalDataStore
 
 _NS_PER_SECOND = 1_000_000_000
 
@@ -36,7 +36,7 @@ class HistoricalDataProvider:
 
     def __init__(
         self,
-        storage: DataStore,
+        storage: HistoricalDataStore,
         fetcher: HistoricalDataFetcher,
     ) -> None:
         self._storage = storage
@@ -79,8 +79,7 @@ class HistoricalDataProvider:
         )
         if df.empty:
             return empty_nautilus_frame()
-        path = self._storage._instrument_path(
-            instrument, from_date, to_date, interval
+        self._storage.write_instrument(
+            df, instrument, from_date, to_date, interval
         )
-        self._storage.write(df, path)
         return _filter_window(df, from_date, to_date)

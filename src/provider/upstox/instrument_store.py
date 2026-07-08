@@ -22,9 +22,10 @@ from __future__ import annotations
 import gzip
 import json
 import time
-from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
+
+from utility.file_storage import FileStorage
 
 __all__ = ["InstrumentStore"]
 
@@ -36,18 +37,12 @@ _MASTER_CONTRACT_URLS: dict[str, str] = {
     "GLOBAL": "https://assets.upstox.com/market-quote/instruments/exchange/global.json.gz",
 }
 
-DEFAULT_CACHE_DIR = Path("./data_fetched/instrument_cache")
 _REFRESH_INTERVAL_SECONDS = 6 * 3600
-
-
 class InstrumentStore:
     """Download, cache, and look up Upstox instrument keys by trading symbol.
 
     Parameters
     ----------
-    cache_dir :
-        Directory where the gzipped JSON master-contract files are cached.
-        Defaults to ``./data_fetched/instrument_cache/`` (already git-ignored).
     exchange :
         Default exchange to use when *exchange* is not passed to
         :meth:`resolve`.  One of ``"NSE"``, ``"BSE"``, ``"MCX"``.
@@ -57,11 +52,10 @@ class InstrumentStore:
 
     def __init__(
         self,
-        cache_dir: str | Path = DEFAULT_CACHE_DIR,
         exchange: str = "NSE",
         refresh_seconds: int = _REFRESH_INTERVAL_SECONDS,
     ) -> None:
-        self._cache_dir = Path(cache_dir)
+        self._storage = FileStorage("instrument_cache")
         self._exchange = exchange.upper()
         self._refresh_seconds = refresh_seconds
         self._instruments: list[dict[str, Any]] | None = None
@@ -135,40 +129,39 @@ class InstrumentStore:
         ) < self._refresh_seconds:
             return
 
-        local = self._cache_dir / f"{self._exchange}.json.gz"
+        cache_key = f"{self._exchange}.json.gz"
 
-        if local.exists() and self._is_fresh(local):
-            self._load_local(local)
+        if self._storage.exists(cache_key) and self._is_fresh(cache_key):
+            self._load_from_cache(cache_key)
         else:
-            self._download(local)
+            self._download_and_cache(cache_key)
 
-    def _is_fresh(self, path: Path) -> bool:
-        age = time.time() - path.stat().st_mtime
-        return age < self._refresh_seconds
+    def _is_fresh(self, cache_key: str) -> bool:
+        mtime = self._storage.mtime(cache_key)
+        if mtime is None:
+            return False
+        return (time.time() - mtime) < self._refresh_seconds
 
-    def _load_local(self, path: Path) -> None:
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            raw = json.load(f)
+    def _load_from_cache(self, cache_key: str) -> None:
+        data = self._storage.get(cache_key)
+        assert data is not None
+        raw = json.loads(gzip.decompress(data))
         self._build_index(raw)
 
-    def _download(self, path: Path) -> None:
+    def _download_and_cache(self, cache_key: str) -> None:
         url = _MASTER_CONTRACT_URLS.get(self._exchange)
         if url is None:
             raise ValueError(
                 f"Unknown exchange: {self._exchange!r}. "
                 f"Use one of: {list(_MASTER_CONTRACT_URLS)}"
             )
-        path.parent.mkdir(parents=True, exist_ok=True)
 
         with urlopen(url) as response:
             raw_bytes = response.read()
 
-        with open(path, "wb") as f:
-            f.write(raw_bytes)
+        self._storage.set(cache_key, raw_bytes)
 
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            raw = json.load(f)
-
+        raw = json.loads(gzip.decompress(raw_bytes))
         self._build_index(raw)
 
     def _build_index(self, raw: list[dict[str, Any]]) -> None:

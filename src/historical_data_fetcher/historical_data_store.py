@@ -2,40 +2,41 @@ from __future__ import annotations
 
 import re
 import shutil
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+from utility.file_storage import FileStorage
 
 _FILENAME_RE = re.compile(
     r"^(?P<from>\d{4}-\d{2}-\d{2})_(?P<to>\d{4}-\d{2}-\d{2})_(?P<candle>.+)\.parquet$"
 )
 
 
-@dataclass
-class DataStoreConfig:
-    data_dir: Path
-
-
-class DataStore:
-    """Pure Parquet file-system interface.
+class HistoricalDataStore:
+    """Parquet file-system wrapper over FileStorage.
 
     Knows only about paths and Parquet I/O.  No data transformation or
     fetch orchestration.
+
+    The underlying :attr:`storage` provides low-level ``set``/``get``/``delete``
+    access (:class:`~utility.file_storage.FileStorage`) for callers that
+    need raw file operations outside of the Parquet convention.
     """
 
-    def __init__(self, config: DataStoreConfig) -> None:
-        self._config = config
+    def __init__(self) -> None:
+        self._storage = FileStorage("historical_data")
 
     @property
     def data_dir(self) -> Path:
-        return self._config.data_dir
+        return self._storage.root
 
-    # -- internal path helpers ---------------------------------------------------
+    @property
+    def storage(self) -> FileStorage:
+        return self._storage
 
-    def _instrument_dir(self, instrument: str) -> Path:
-        return self._config.data_dir / instrument
+    # -- internal helpers --------------------------------------------------------
 
     @staticmethod
     def _range_filename(from_date: str, to_date: str, candle_length: str) -> str:
@@ -48,7 +49,7 @@ class DataStore:
         to_date: str,
         candle_length: str,
     ) -> Path:
-        return self._instrument_dir(instrument) / self._range_filename(
+        return self._storage.root / instrument / self._range_filename(
             from_date, to_date, candle_length
         )
 
@@ -66,15 +67,9 @@ class DataStore:
         to_date: str,
         candle_length: str,
     ) -> Path | None:
-        directory = self._instrument_dir(instrument)
-        if not directory.is_dir():
-            return None
-
         best_span: int | None = None
         best_path: Path | None = None
-        for entry in directory.iterdir():
-            if entry.suffix != ".parquet" or not entry.is_file():
-                continue
+        for entry in self._storage.list(f"{instrument}/*.parquet"):
             parsed = self._parse_filename(entry.name)
             if parsed is None:
                 continue
@@ -113,6 +108,17 @@ class DataStore:
         df.to_parquet(path, index=False)
         return path
 
+    def write_instrument(
+        self,
+        df: pd.DataFrame,
+        instrument: str,
+        from_date: str,
+        to_date: str,
+        candle_length: str,
+    ) -> Path:
+        path = self._instrument_path(instrument, from_date, to_date, candle_length)
+        return self.write(df, path)
+
     def exists(
         self,
         instrument: str,
@@ -137,10 +143,11 @@ class DataStore:
         path = self._instrument_path(
             instrument, from_date, to_date, candle_length
         )
-        if path.exists():
-            path.unlink()
+        self._storage.delete(
+            str(path.relative_to(self._storage.root))
+        )
 
     def purge_instrument(self, instrument: str) -> None:
-        directory = self._instrument_dir(instrument)
-        if directory.exists():
-            shutil.rmtree(directory)
+        dir_path = self._storage.root / instrument
+        if dir_path.exists():
+            shutil.rmtree(dir_path)

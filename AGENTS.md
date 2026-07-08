@@ -10,8 +10,12 @@
 - `.env` at repo root contains Upstox credentials + `DATA_DIR` (gitignored)
 - `direnv` users: `.envrc` auto-sources `venv/bin/activate`
 
+## Critical
+- If possible use "SUBAGENTS" > This keeps context clear
+
 ## Architecture
 
 - .env file is functional and correctly written 
 - Leverage existing functions rather than creating yours
 - Ensure separation of concern
+- ALWAYS - stick to using non optionals

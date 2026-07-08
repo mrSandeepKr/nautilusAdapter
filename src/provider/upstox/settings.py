@@ -3,6 +3,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from settings import get_app_settings
+
 RATE_LIMIT_REQUESTS_PER_SECOND = 8
 RATE_LIMIT_REQUESTS_PER_MINUTE = 450
 
@@ -15,8 +17,6 @@ class UpstoxSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
-
-    DATA_DIR: Path
 
     UPSTOX_PHONE_NUMBER: str
     UPSTOX_PIN_CODE: str
@@ -51,7 +51,7 @@ class UpstoxSettings(BaseSettings):
 
     @property
     def upstox_access_token_path(self) -> Path:
-        return Path(self.DATA_DIR) / "upstox_access_token.txt"
+        return get_app_settings().DATA_DIR / "upstox_access_token.txt"
 
 
 _settings: UpstoxSettings | None = None
@@ -60,12 +60,10 @@ _settings: UpstoxSettings | None = None
 def get_upstox_settings() -> UpstoxSettings:
     """Return a cached :class:`UpstoxSettings` singleton.
 
-    The first call reads ``.env``, ensures :attr:`DATA_DIR` exists, and
-    stores the instance. Subsequent calls reuse it.
+    The first call reads ``.env`` and stores the instance.
+    Subsequent calls reuse it.
     """
     global _settings
     if _settings is None:
-        settings = UpstoxSettings()
-        settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        _settings = settings
+        _settings = UpstoxSettings()
     return _settings
