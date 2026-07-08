@@ -17,6 +17,7 @@ dependencies = [
     "pyotp",
     "requests",
     "playwright",
+    "nselib",
 ]
 
 [tool.setuptools.packages.find]
