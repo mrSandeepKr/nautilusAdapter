@@ -371,6 +371,22 @@ def on_start(self):
     # ... register indicators, subscribe bars ...
 ```
 
+### RSI value range (momentum.pyx)
+
+`RelativeStrengthIndex.value` returns a **0–1** float — NOT the traditional 0–100.
+Confirmed at momentum.pyx:83: `self._rsi_max = 1`. The standard RSI formula would
+set `_rsi_max = 100`; Nautilus normalises to 0–1.
+
+Thresholds in strategy code must use 0–1 values:
+```python
+# CORRECT — 0-1 scale (matches Nautilus):
+self._prev_rsi <= 0.5 <= curr_rsi < 0.75   # RSI crossing above 50 (0.5)
+prev_rsi < 0.30 and curr_rsi >= 0.30        # oversold crossover
+
+# WRONG — treating as 0-100 scale:
+prev_rsi <= 50 <= curr_rsi < 75   # never true (RSI caps at 1.0)
+```
+
 ### Other useful indicators (all in `indicators/`)
 
 | Module | Classes |
@@ -543,6 +559,22 @@ class MyConfig(StrategyConfig, frozen=True, kw_only=True):
     trade_qty: int
     ...
 ```
+
+### Gotcha: `&` in instrument_id_str crashes DuckDB
+
+```
+catalog.query(Bar, identifiers=["M&M.NSE-15-MINUTE-LAST-EXTERNAL"])
+→ ParserError: Expected end of statement, found: & at Line:1, Column:20
+```
+
+`ParquetDataCatalog.query()` passes identifiers as SQL expressions to DuckDB.
+The `&` character in NSE symbols (`M&M`, `J&KBANK`, `GVT&D`) is treated as a
+SQL bitwise AND operator. Nautilus has no built-in SQL identifier sanitization
+— must be handled at the call site.
+
+Workaround: try/except with fallback, or replace `&` with `_` in the identifier
+string (but then it won't match the stored data). The safest: skip the
+problematic instrument in queries and use a default value.
 
 ### BacktestResult (backtest/results.py:19)
 

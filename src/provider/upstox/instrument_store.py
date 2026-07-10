@@ -117,6 +117,27 @@ class InstrumentStore:
                     break
         return results
 
+    def search_exact(
+        self, symbol: str
+    ) -> list[dict[str, Any]]:
+        """Return ALL instrument dicts matching an exact trading symbol.
+
+        Unlike ``search()`` which truncates at *limit*, this returns every
+        segment entry (EQ, FO, etc.) for the given symbol, including option
+        series and futures.  Lookup is case-insensitive.
+
+        Parameters
+        ----------
+        symbol :
+            Exact trading symbol (e.g. ``"HDFCBANK"``, ``"TCS"``).
+
+        Returns
+        -------
+        A list of matching instrument dicts (may be empty).
+        """
+        self._ensure_loaded()
+        return self._by_symbol.get(symbol.upper(), [])
+
     def refresh(self) -> None:
         """Force a fresh download on the next lookup."""
         self._instruments = None

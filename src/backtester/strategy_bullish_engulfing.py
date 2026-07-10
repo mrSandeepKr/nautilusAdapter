@@ -5,7 +5,7 @@ from decimal import Decimal
 import pandas as pd
 from nautilus_trader.indicators import AverageTrueRange, RelativeStrengthIndex, SimpleMovingAverage, VolumeWeightedAveragePrice
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide, TrailingOffsetType, TriggerType
+from nautilus_trader.model.enums import OrderSide, OrderType, TrailingOffsetType, TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.risk.sizing import FixedRiskSizer
@@ -60,8 +60,11 @@ class BullishEngulfingStrategy(Strategy):
         self.sma20 = None
         self.rsi = None
         self.vwap = None
+        self.volume_sma = None
         self._prev_rsi = None
         self._prev_bar = None
+        self._engulfing_prev = None
+        self._engulfing_bar = None
 
     def on_start(self) -> None:
         self._instrument = self.cache.instrument(self._instrument_id)
@@ -73,10 +76,12 @@ class BullishEngulfingStrategy(Strategy):
         self.sma20 = SimpleMovingAverage(20)
         self.rsi = RelativeStrengthIndex(14)
         self.vwap = VolumeWeightedAveragePrice()
+        self.volume_sma = SimpleMovingAverage(10)
         self.register_indicator_for_bars(self._bar_type, self.atr)
         self.register_indicator_for_bars(self._bar_type, self.sma20)
         self.register_indicator_for_bars(self._bar_type, self.rsi)
         self.register_indicator_for_bars(self._bar_type, self.vwap)
+        self.register_indicator_for_bars(self._bar_type, self.volume_sma)
         self.subscribe_bars(self._bar_type)
 
     def _atr_offset(self) -> Decimal:
@@ -85,21 +90,54 @@ class BullishEngulfingStrategy(Strategy):
             self._instrument.price_precision,
         )))
 
+    def _is_market_closing(self, bar: Bar) -> bool:
+        dt = pd.Timestamp(bar.ts_event, unit='ns', tz='Asia/Kolkata')
+        return dt.hour >= 15 and dt.minute >= 15
+
+    def _allow_entry(self, bar: Bar) -> bool:
+        dt = pd.Timestamp(bar.ts_event, unit='ns', tz='Asia/Kolkata')
+        if dt.hour < 9 or (dt.hour == 9 and dt.minute < 45):
+            return False
+        if dt.hour >= 14 and dt.minute >= 30:
+            return False
+        return True
+
+    def _is_bullish_engulfing(self, prev: Bar, bar: Bar) -> bool:
+        return (prev.close < prev.open
+            and bar.close > bar.open
+            and bar.open <= prev.close
+            and bar.close > prev.open)
+
     def on_bar(self, bar: Bar) -> None:
         if self._instrument is None or not self.indicators_initialized():
             return
 
         if not self.portfolio.is_flat(self._instrument_id):
-            self._exit_position(bar)
+            if self._is_market_closing(bar):
+                self._exit_position(bar)
             return
 
         prev = self._prev_bar
         self._prev_bar = bar
         if prev is None:
+            self._prev_rsi = self.rsi.value
             return
 
-        if self._should_enter_position(prev, bar):
-            self._enter_position(bar)
+        if self._engulfing_bar is not None:
+            if bar.close > self._engulfing_bar.close and bar.close > bar.open:
+                if self._allow_entry(bar):
+                    self._enter_position(bar)
+            self._engulfing_prev = None
+            self._engulfing_bar = None
+            self._prev_rsi = self.rsi.value
+            return
+
+        if self._is_bullish_engulfing(prev, bar) and self._allow_entry(bar):
+            if self._prev_rsi is not None and self._prev_rsi <= 0.5 < self.rsi.value:
+                if bar.close.as_double() > self.sma20.value and bar.close.as_double() > self.vwap.value:
+                    if bar.volume.as_double() > self.volume_sma.value * 1.5:
+                        self._engulfing_prev = prev
+                        self._engulfing_bar = bar
 
         self._prev_rsi = self.rsi.value
 
@@ -113,36 +151,22 @@ class BullishEngulfingStrategy(Strategy):
 
     # --- helpers ---
 
-    def _should_enter_position(self, prev: Bar, bar: Bar) -> bool:
-        if self._bar_type.spec.timedelta < pd.Timedelta(days=1):
-            dt = pd.Timestamp(bar.ts_event, unit='ns', tz='Asia/Kolkata')
-            if dt.hour < 10:
-                return False
-
-        if bar.close.as_double() <= self.sma20.value or bar.close.as_double() < self.vwap.value:
-            return False
-
-        curr_rsi = self.rsi.value
-        if self._prev_rsi is None or not (self._prev_rsi <= 0.5 <= curr_rsi < 0.75):
-            return False
-
-        if bar.volume.as_double() <= prev.volume.as_double():
-            return False
-
-        return (prev.close < prev.open
-            and bar.close > bar.open
-            and bar.open <= prev.close
-            and bar.close > prev.open)
-
     def _enter_position(self, bar: Bar) -> None:
         account = self.portfolio.account(venue=self._instrument_id.venue)
         equity = account.balance_total(account.base_currency)
         risk = Decimal(self.config.risk_percent)
-        atr_offset = self._atr_offset()
+
         stop_price = Price(
-            bar.close.as_double() - float(atr_offset),
+            min(self._engulfing_prev.low.as_double(), self._engulfing_bar.low.as_double()),
             self._instrument.price_precision,
         )
+
+        risk_amount = float(bar.close.as_double() - float(stop_price))
+        tp_price = Price(
+            bar.close.as_double() + risk_amount * 2.0,
+            self._instrument.price_precision,
+        )
+
         raw_qty = int(self._sizer.calculate(
             entry=bar.close,
             stop_loss=stop_price,
@@ -153,12 +177,15 @@ class BullishEngulfingStrategy(Strategy):
         qty = self._instrument.make_qty(max(lot_size, (raw_qty // lot_size) * lot_size))
         if qty.as_double() <= 0:
             return
-        order = self.order_factory.market(
-            self._instrument_id,
-            OrderSide.BUY,
-            qty,
+
+        bracket = self.order_factory.bracket(
+            instrument_id=self._instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=qty,
+            tp_price=tp_price,
+            sl_trigger_price=stop_price,
         )
-        self.submit_order(order)
+        self.submit_order_list(bracket)
 
     def _exit_position(self, bar: Bar) -> None:
         self.close_all_positions(
@@ -166,7 +193,6 @@ class BullishEngulfingStrategy(Strategy):
             reduce_only=True,
             tags=["EOD_SQUARE_OFF"],
         )
-        self._prev_bar = bar
 
     def _set_trailing_stop(self, event) -> None:
         offset = self._atr_offset()

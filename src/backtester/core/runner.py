@@ -83,10 +83,13 @@ def _last_close_prices(
 ) -> dict[str, float]:
     prices: dict[str, float] = {}
     for e in universe:
-        bars = catalog.query(
-            Bar,
-            identifiers=[f"{e.instrument_id_str}-{bar_spec}-EXTERNAL"],
-        )
+        try:
+            bars = catalog.query(
+                Bar,
+                identifiers=[f"{e.instrument_id_str}-{bar_spec}-EXTERNAL"],
+            )
+        except Exception:
+            bars = None
         if bars:
             prices[e.symbol] = float(bars[-1].close.as_double())
         else:

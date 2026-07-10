@@ -59,3 +59,44 @@ def build_universe_top_volatile(
     store = InstrumentStore()
     entries = [e for s in symbols if (e := _resolve_entry(store, s)) is not None]
     return entries, _benchmark_entry(store)
+
+
+def build_universe_liquid(
+    n: int = 200,
+    min_trade_value: float = 50_000_000,
+) -> tuple[list[UniverseEntry], BenchmarkEntry]:
+    bhavcopy = BhavcopyClient(BhavcopyDataFetcher())
+    latest = bhavcopy.latest_bhavcopy()
+    if latest.empty:
+        return [], _benchmark_entry(InstrumentStore())
+
+    equity_series = ("EQ", "BE", "BZ")
+    df = latest[latest["SctySrs"].isin(equity_series)].copy()
+    df = df[df["TtlTrfVal"] >= min_trade_value]
+    df = df.sort_values("TtlTrfVal", ascending=False).head(n)
+
+    symbols = list(df["TckrSymb"])
+    store = InstrumentStore()
+    entries = []
+    for s in symbols:
+        e = _resolve_entry_eq(store, s)
+        if e is not None:
+            entries.append(e)
+        if len(entries) >= n:
+            break
+    return entries, _benchmark_entry(store)
+
+
+def _resolve_entry_eq(store: InstrumentStore, symbol: str) -> UniverseEntry | None:
+    results = store.search_exact(symbol)
+    for r in results:
+        if r.get("segment") == "NSE_EQ":
+            return UniverseEntry(
+                symbol=symbol,
+                upstox_key=r["instrument_key"],
+                instrument_id_str=f"{symbol}.NSE",
+                tick_size=Decimal(str(r.get("tick_size", 5))) / Decimal("100"),
+                lot_size=int(r.get("lot_size", 1)),
+                isin=r.get("isin"),
+            )
+    return None

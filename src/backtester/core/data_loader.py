@@ -47,8 +47,7 @@ def build_catalog(
     t1: str,
     interval: str,
 ) -> ParquetDataCatalog:
-    if catalog_path.exists() and any(catalog_path.iterdir()):
-        return ParquetDataCatalog(str(catalog_path))
+    catalog = ParquetDataCatalog(str(catalog_path))
 
     bar_spec = bar_spec_from_interval(interval)
     provider = HistoricalDataProvider(HistoricalDataStore(), UpstoxClient())
@@ -57,11 +56,20 @@ def build_catalog(
     instruments: list = []
 
     for entry in universe:
+        inst_id_str = entry.instrument_id_str
+        # Skip if this instrument already has data in catalog
+        try:
+            existing = catalog.instruments()
+            if any(str(i.id) == inst_id_str for i in existing):
+                continue
+        except Exception:
+            pass
+
         df = provider.fetch_historical_data(entry.upstox_key, interval, t0, t1)
         if df.empty:
             continue
 
-        instrument_id = InstrumentId.from_str(entry.instrument_id_str)
+        instrument_id = InstrumentId.from_str(inst_id_str)
         bar_type = BarType(
             instrument_id,
             bar_spec,
@@ -102,6 +110,6 @@ def build_catalog(
                 int(row.ts_event),   # ts_init = close time (execution)
             ))
 
-    catalog = ParquetDataCatalog(str(catalog_path))
-    catalog.write_data(bars_data + instruments)
+    if bars_data:
+        catalog.write_data(bars_data + instruments)
     return catalog
