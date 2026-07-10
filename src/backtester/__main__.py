@@ -34,6 +34,7 @@ def main() -> None:
     parser.add_argument("--t0", default="2024-07-01")
     parser.add_argument("--t1", default="2026-07-07")
     parser.add_argument("--t-split", default="2025-09-27")
+    parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
     entries, bench = build_universe_top_volatile(n=args.n, window=args.window)
@@ -48,6 +49,7 @@ def main() -> None:
         total_corpus=args.total_corpus,
         catalog_path=FileStorage("catalog").root / args.interval,
         output_dir=FileStorage("backtest_results").root,
+        verbose=args.verbose,
     )
 
 

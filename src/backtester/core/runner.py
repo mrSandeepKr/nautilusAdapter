@@ -34,6 +34,7 @@ def _build_run_config(
     log_file_name: str,
     bar_spec: str,
     total_corpus: str,
+    verbose: bool = False,
 ) -> BacktestRunConfig:
     return BacktestRunConfig(
         venues=[BacktestVenueConfig(
@@ -62,7 +63,7 @@ def _build_run_config(
         engine=BacktestEngineConfig(
             strategies=strategy_configs,
             logging=LoggingConfig(
-                log_level="WARNING",
+                log_level="INFO" if verbose else "WARNING",
                 log_level_file="INFO",
                 log_file_name=log_file_name,
             ),
@@ -104,29 +105,40 @@ def run_backtest(
     total_corpus: str,
     catalog_path: Path,
     output_dir: Path,
+    verbose: bool = False,
 ) -> dict[str, tuple[str, str]]:
 
+    print(f"[{len(universe)} instruments · {interval} · {t0}–{t1}]")
+
+    print(f"Building/loading catalog ... ", end="", flush=True)
     catalog = build_catalog(universe, catalog_path, t0, t1, interval)
     build_benchmark(catalog, benchmark, interval, t0, t1)
+    print("done")
+
     bs = bar_spec_str(interval)
     close_prices = _last_close_prices(catalog, universe, bs)
     strategy_configs = spec.config_builder(universe, close_prices, bs)
 
+    print(f"Train ({t0}–{t_split}) .............................. ", end="", flush=True)
     train_run = _build_run_config(
-        catalog_path, universe, strategy_configs, t0, t_split, "train.log", bs, total_corpus,
+        catalog_path, universe, strategy_configs, t0, t_split, "train.log", bs, total_corpus, verbose,
     )
     validate_run = _build_run_config(
-        catalog_path, universe, strategy_configs, t_split, t1, "validate.log", bs, total_corpus,
+        catalog_path, universe, strategy_configs, t_split, t1, "validate.log", bs, total_corpus, verbose,
     )
 
     node = BacktestNode(configs=[train_run, validate_run])
     results = node.run()
     engines = node.get_engines()
+    print("done")
 
+    print("Benchmark ..................................... ", end="", flush=True)
     nifty_ret = load_benchmark_returns(catalog, benchmark)
+    print("done")
 
+    print("Reports ...................................... ")
     comparison = make_report(
-        engines[0], engines[1], results[0], results[1], nifty_ret, output_dir
+        engines[0], engines[1], results[0], results[1], nifty_ret, output_dir, bar_spec=bs
     )
 
     return comparison

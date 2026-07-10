@@ -12,8 +12,9 @@ def make_report(
     validate_result,
     nifty_ret: pd.Series | None,
     output_dir: Path,
+    bar_spec: str,
 ) -> dict[str, tuple[str, str]]:
-    _write_tearsheets(train_engine, validate_engine, nifty_ret, output_dir)
+    _write_tearsheets(train_engine, validate_engine, nifty_ret, output_dir, bar_spec)
 
     comparison = build_comparison(train_result, validate_result)
     comparison["Verdict"] = verdict(comparison)
@@ -23,7 +24,65 @@ def make_report(
     )
     print_comparison(comparison)
 
+    inst_comp = build_instrument_comparison(train_engine.cache, validate_engine.cache)
+    if inst_comp:
+        pd.DataFrame.from_dict(inst_comp, orient="index").to_csv(
+            output_dir / "instrument_comparison.csv"
+        )
+        _print_instrument_comparison(inst_comp)
+
+    _print_output_links(output_dir)
+
     return comparison
+
+
+def _instrument_metrics(cache) -> dict[str, dict[str, str]]:
+    positions = cache.positions()
+    by_inst: dict[str, list] = {}
+    for pos in positions:
+        if not pos.is_closed:
+            continue
+        inst = str(pos.instrument_id)
+        by_inst.setdefault(inst, []).append(pos)
+
+    metrics: dict[str, dict[str, str]] = {}
+    for inst, pos_list in by_inst.items():
+        pnls = [float(p.realized_pnl) for p in pos_list if p.realized_pnl is not None]
+        if not pnls:
+            continue
+        winners = [p for p in pnls if p > 0]
+        losers = [p for p in pnls if p <= 0]
+        total = sum(pnls)
+        n = len(pnls)
+        win_rate = len(winners) / n
+        avg_winner = sum(winners) / len(winners) if winners else 0.0
+        avg_loser = sum(losers) / len(losers) if losers else 0.0
+        pf = abs(sum(winners) / sum(losers)) if losers and sum(losers) != 0 else (float("inf") if winners else 0.0)
+        metrics[inst] = {
+            "Total PnL": f"₹{total:,.2f}",
+            "Win Rate": f"{win_rate * 100:.1f}%",
+            "# Trades": str(n),
+            "Profit Factor": f"{pf:.2f}",
+            "Avg Winner": f"₹{avg_winner:,.2f}",
+            "Avg Loser": f"₹{avg_loser:,.2f}",
+            "Expectancy": f"₹{total / n:,.2f}",
+        }
+    return metrics
+
+
+def build_instrument_comparison(train_cache, validate_cache) -> dict[str, tuple[str, str]]:
+    train_m = _instrument_metrics(train_cache)
+    validate_m = _instrument_metrics(validate_cache)
+    all_insts = sorted(set(train_m) | set(validate_m))
+    comp: dict[str, tuple[str, str]] = {}
+    for inst in all_insts:
+        train_row = train_m.get(inst, {})
+        validate_row = validate_m.get(inst, {})
+        comp[inst] = (
+            train_row.get("Total PnL", "N/A"),
+            validate_row.get("Total PnL", "N/A"),
+        )
+    return comp
 
 
 def _write_tearsheets(
@@ -31,24 +90,79 @@ def _write_tearsheets(
     validate_engine,
     nifty_ret: pd.Series | None,
     output_dir: Path,
+    bar_spec: str,
 ) -> None:
     try:
-        from nautilus_trader.analysis import create_tearsheet
-
-        create_tearsheet(
-            train_engine,
-            str(output_dir / "tearsheet_train.html"),
-            benchmark_returns=nifty_ret,
-            benchmark_name="Nifty 50",
-        )
-        create_tearsheet(
-            validate_engine,
-            str(output_dir / "tearsheet_validate.html"),
-            benchmark_returns=nifty_ret,
-            benchmark_name="Nifty 50",
+        from nautilus_trader.analysis import (
+            create_tearsheet,
+            TearsheetConfig,
+            TearsheetRunInfoChart,
+            TearsheetStatsTableChart,
+            TearsheetEquityChart,
+            TearsheetDrawdownChart,
+            TearsheetMonthlyReturnsChart,
+            TearsheetDistributionChart,
+            TearsheetRollingSharpeChart,
+            TearsheetYearlyReturnsChart,
+            TearsheetBarsWithFillsChart,
         )
     except ImportError:
-        pass
+        return
+
+    full_config = TearsheetConfig(
+        charts=[
+            TearsheetRunInfoChart(),
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+            TearsheetDrawdownChart(),
+            TearsheetMonthlyReturnsChart(),
+            TearsheetDistributionChart(),
+            TearsheetRollingSharpeChart(),
+            TearsheetYearlyReturnsChart(),
+        ],
+        theme="nautilus_dark",
+        height=2200,
+    )
+
+    for suffix, engine in [("train", train_engine), ("validate", validate_engine)]:
+        create_tearsheet(
+            engine,
+            str(output_dir / f"tearsheet_{suffix}.html"),
+            config=full_config,
+            benchmark_returns=nifty_ret,
+            benchmark_name="Nifty 50",
+        )
+
+    if not bar_spec:
+        return
+
+    inst_metrics = _instrument_metrics(train_engine.cache)
+    top_insts = sorted(
+        inst_metrics.items(),
+        key=lambda x: abs(float(x[1]["Total PnL"].replace("₹", "").replace(",", ""))),
+        reverse=True,
+    )[:5]
+
+    for inst, _ in top_insts:
+        for suffix, engine in [("train", train_engine), ("validate", validate_engine)]:
+            safe_inst = inst.replace(".", "_")
+            out = output_dir / f"tearsheet_{safe_inst}_{suffix}.html"
+            create_tearsheet(
+                engine, str(out),
+                config=TearsheetConfig(
+                    charts=[
+                        TearsheetRunInfoChart(),
+                        TearsheetStatsTableChart(),
+                        TearsheetEquityChart(title=f"{inst} — Equity"),
+                        TearsheetBarsWithFillsChart(
+                            bar_type=f"{inst}-{bar_spec}-EXTERNAL",
+                            title=f"{inst} — Bars with Fills",
+                        ),
+                    ],
+                    theme="nautilus_dark",
+                    height=1400,
+                ),
+            )
 
 
 def build_comparison(
@@ -93,3 +207,26 @@ def print_comparison(comparison: dict[str, tuple[str, str]]) -> None:
     print("-" * (col_width + 48))
     for key, (train_val, validate_val) in comparison.items():
         print(f"{key.ljust(col_width)}  {train_val:>22}  {validate_val:>22}")
+
+
+def _print_instrument_comparison(comp: dict[str, tuple[str, str]]) -> None:
+    print()
+    print("=== Per-Instrument PnL Comparison ===")
+    col_width = max(len(k) for k in comp) + 2
+    print(f"{'Instrument'.ljust(col_width)}  {'Train':>15}  {'Validate':>15}")
+    print("-" * (col_width + 32))
+    for inst, (tv, vv) in comp.items():
+        print(f"{inst.ljust(col_width)}  {tv:>15}  {vv:>15}")
+    print()
+
+
+def _print_output_links(output_dir: Path) -> None:
+    abs_dir = output_dir.resolve()
+    html_files = sorted(abs_dir.glob("*.html"))
+    if not html_files:
+        return
+    print("=== Reports ===")
+    for f in html_files:
+        url = f"file://{f}"
+        print(f"  {url}")
+    print()
