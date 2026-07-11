@@ -17,7 +17,8 @@ src/backtester/
     data_loader.py       — build_catalog(), load_benchmark_returns()
     fees.py              — NseFeeModel + NseFeeModelConfig (STT/SEBI/GST/brokerage)
     runner.py            — run_backtest(), comparison, verdict (pure orchestration, no CLI)
-  strategy_*.py          — one file per strategy: Config + Strategy + build_*_configs()
+  strategy_composite.py  — COMPOSITE entry-signal sweep (see "Composite vs isolated" below)
+  strategy_*.py          — ISOLATED strategies: one file per strategy with its own Config + Strategy + build_*_configs()
   docs/
     NAUTILUS_DOCS.md     — verified Nautilus API facts + gotchas (read when something breaks)
 ```
@@ -36,8 +37,54 @@ src/backtester/
 - **Strategies are thin leaves.** A strategy file only declares its
   `Config`, its `Strategy` subclass, and a `build_*_configs` factory. It
   pulls everything else (universe, bars, fees, runner) from `core/`.
+- **Composite vs isolated.** Two strategies-live patterns coexist by design:
 
-## How to build a strategy
+  - **`strategy_composite.py` — composite (non-isolated batch sweeps).** A single
+    `CompositeStrategy` class dispatches to many entry-signal `_signal_<name>`
+    methods × `EXIT_METHODS` exit stacks via string dispatch, all registered
+    together as `COMPOSITE_ENTRIES × EXIT_METHODS` (currently 23 × 4 = 92
+    `"<entry>__<exit>"` CLI keys in `_bootstrap()`). Use it when a new entry
+    signal reuses the existing indicator/filter/time-gating/stop plumbing of the
+    composite class — i.e. you're scanning a grid of similar signals where each
+    is just another candlestick-pattern or indicator-trigger routine. **Do not
+    create an isolated file per signal here; that defeats the shared
+    edge-indicator plumbing the composite exists to amortise.**
+
+  - **`strategy_<name>.py` — isolated (one file per standalone strategy).** Use
+    when a strategy has bespoke per-bar logic, bespoke indicators, a different
+    lifecycle, custom exit semantics, or otherwise would bleed into other
+    signals if bolted onto the composite. Register it with **one** explicit
+    `register("<name>", ...)` call in `_bootstrap()` (see "How to build an
+    isolated strategy" below).
+
+## How to add a strategy — composite or isolated?
+
+**Pick the composite** (`strategy_composite.py`) when the new entry signal
+fits the existing shared indicator/filter/time-gating/stop contract of the
+composite class — i.e. it is a non-isolated case where you'll want a
+Cartesian entry × exit sweep against the existing 92-strategy grid.
+
+To extend the composite:
+
+1. **Add a `_signal_<name>(self, prev, bar) -> bool`** (or `_signal_<name>(self,
+   bars: list[Bar | None]) -> bool` for 3-bar patterns) method to
+   `CompositeStrategy`. Put longs in `_detect_entry`'s dispatch dict, shorts
+   in `_detect_entry_short`'s dict.
+2. **Append the name to `COMPOSITE_ENTRIES`** (and to `SHORT_SIGNALS` if it's
+   a short signal — the two must overlap exactly on shorts, hand-maintained).
+3. Done. `_bootstrap()` already iterates `COMPOSITE_ENTRIES × EXIT_METHODS`,
+   so `<name>__<exit>` CLI keys appear automatically. **No** `register()`
+   call, **no** new file, **no** `_bootstrap()` edit. Do not isolate signals
+   that share the composite's plumbing into separate files — that's the case
+   the composite exists for.
+
+**Pick isolated** (`strategy_<name>.py`) when the strategy cannot be expressed
+as another `_signal_*` row in the composite — bespoke indicators, bespoke
+lifecycle, custom exit semantics, or per-variant config the composite
+`CompositeConfig` cannot express. See "How to build an isolated strategy"
+below.
+
+## How to build an isolated strategy
 
 1. **Create `strategy_<name>.py`** with `<Name>Config(StrategyConfig,
    frozen=True, kw_only=True)` and `<Name>Strategy(Strategy)`. Export
@@ -72,8 +119,9 @@ src/backtester/
 | `core/data_loader.py` | Cached Nautilus-schema DataFrame → Equity + `list[Bar]` + catalog | No (CONSTANT) |
 | `core/fees.py` | Custom `NseFeeModel` (STT/SEBI/GST/brokerage) | No (CONSTANT) |
 | `core/runner.py` | `BacktestNode` orchestration, train/validate split, tearsheets, verdict | No (CONSTANT) |
-| `__main__.py` | CLI entry point: strategy registry + argparse | **Yes** — add one `register()` call |
-| `strategy_<name>.py` | A new strategy's `Config` + `Strategy` + `build_*_configs()` | **New file** |
+| `__main__.py` | CLI entry point: strategy registry + argparse | **Only for isolated strategies** — add one `register()` call (composite is auto-registered via `COMPOSITE_ENTRIES × EXIT_METHODS`) |
+| `strategy_composite.py` | `CompositeStrategy` + `CompositeConfig` + 23 `_signal_*` methods × 4 `EXIT_METHODS`; produces all `"<entry>__<exit>"` keys | **Edit** when extending the composite sweep (add method + entry name; `_bootstrap()` picks it up automatically) |
+| `strategy_<name>.py` | An isolated strategy's `Config` + `Strategy` + `build_*_configs()` | **New file** — only for strategies that don't fit the composite contract |
 | `docs/NAUTILUS_DOCS.md` | Nautilus API facts + gotchas (verified) | Reference only |
 
 ## Reuse rules (do not duplicate)
@@ -94,7 +142,8 @@ src/backtester/
 | Need | Look in |
 |------|---------|
 | Nautilus API gotchas (timestamp swap, fees, trailing stops, PositionOpened, cache.positions, on_start, kw_only) | `docs/NAUTILUS_DOCS.md` — each section has a "Gotcha" subsection |
-| Reference strategy implementation (Config + Strategy + factory shape) | any existing `strategy_*.py` file |
+| Composite signal plumbing (shared indicators, `_signal_*` shape, `_detect_entry`/`_detect_entry_short` dispatch, `CompositeConfig` fields, `EXIT_METHODS`) | `strategy_composite.py` |
+| Reference shape for an *isolated* strategy (Config + Strategy + factory, no string dispatch) | a future `strategy_<name>.py` (no current examples — all entries live in the composite) |
 | CLI flags and registry wiring | `__main__.py` |
 
 ## Coding conventions (project-wide)

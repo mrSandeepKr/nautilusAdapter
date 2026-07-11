@@ -44,7 +44,7 @@ Concretely:
 
 | File | Purpose |
 |------|---------|
-| `strategy_variants.py` | Single parameterized `VariantStrategy` + `VariantConfig` dispatching across 23 entry signals (15 bullish, 8 bearish), 4 exit methods, configurable filters, short/long direction, optional EOD close. Multiple `build_*_configs()` factory functions. |
+| `strategy_composite.py` | Single parameterized `CompositeStrategy` + `CompositeConfig` dispatching across 23 entry signals (15 bullish, 8 bearish), 4 exit methods, configurable filters, short/long direction, optional EOD close. Multiple `build_*_configs()` factory functions. |
 | `batch_test.py` | Sequential batch runner that slices the full variant matrix and runs each on training data. Accepts `start_idx end_idx n interval` CLI args for subagent parallelisation. Output: `data_fetched/backtest_results/batch_results.csv` |
 | `core/universe.py` | `build_universe_liquid(n, min_trade_value=50M)` — uses bhavcopy `TtlTrfVal`, filters to NSE_EQ via `InstrumentStore.search_exact()`. Replaces earlier `top_volatile` which picked illiquid micro-caps. |
 | `core/__init__.py` | Exports `build_universe_liquid` |
@@ -53,7 +53,7 @@ Concretely:
 
 | File | Change |
 |------|--------|
-| `__main__.py` | Auto-registers all `VARIANT_NAMES × EXIT_METHODS` combinations (92) as `{entry}__{exit}` strategy names. |
+| `__main__.py` | Auto-registers all `COMPOSITE_ENTRIES × EXIT_METHODS` combinations (92) as `{entry}__{exit}` strategy names. |
 | `core/runner.py` | `_last_close_prices()` wrapped in try/except for `&`-in-symbol DuckDB crash (M&M, J&KBANK, GVT&D). |
 | `src/provider/upstox/instrument_store.py` | Added `search_exact()` — returns all segment entries for exact symbol (not truncated by FO options). |
 
@@ -298,7 +298,7 @@ Moving to the automated `top_volatile` universe collapses all gains.
    AvgLoser were nearly equal despite a 2:1 configured RR ratio.
 
 6. **Nautilus 1.230.0 indicator bugs** affect `MovingAverageConvergenceDivergence`
-   and `DirectionalMovement.value`. Workarounds are in `strategy_variants.py`.
+   and `DirectionalMovement.value`. Workarounds are in `strategy_composite.py`.
 
 ---
 
@@ -321,7 +321,7 @@ only take short signals when Nifty 50 < SMA200. This prevents fighting the
 broader trend.
 
 ### Priority 3: Remove EOD forced close
-The `force_eod_close=False` option already exists in `VariantConfig` (added
+The `force_eod_close=False` option already exists in `CompositeConfig` (added
 during this campaign). Run the best short variant with it enabled, allowing
 trades to run overnight until TP/SL is hit.
 
@@ -347,7 +347,7 @@ market-neutral and less sensitive to regime changes.
 ### Training phase (all work happens here)
 
 ```bash
-# Step 1: Add/modify signals in strategy_variants.py
+# Step 1: Add/modify signals in strategy_composite.py
 #         (__main__.py auto-registers all variants)
 
 # Step 2: Quick smoke test — 3 instruments, 1 variant, tiny training slice
@@ -391,9 +391,9 @@ a new signal or universe, and repeat. Every validation run burns objectivity
 
 ### Adding a new entry signal
 
-1. Add the variant name to `VARIANT_NAMES` in `strategy_variants.py`
+1. Add the variant name to `COMPOSITE_ENTRIES` in `strategy_composite.py`
 2. If bearish, also add to `SHORT_SIGNALS`
 3. Implement `_signal_<name>(self, prev: Bar, bar: Bar) -> bool`
 4. Add it to the dispatch dict inside `_detect_entry()` (or `_detect_entry_short()`)
 5. If it's a multi-bar pattern, manage `self._signal_candle` and `self._pending_stop_low`/`_pending_stop_high`
-6. Deploy via `_gen_variants()` — it picks up `VARIANT_NAMES` and `EXIT_METHODS` automatically
+6. Deploy via `_gen_composite_entries()` — it picks up `COMPOSITE_ENTRIES` and `EXIT_METHODS` automatically

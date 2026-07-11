@@ -1,5 +1,3 @@
-"""Thin wrapper: fetch 5-min candles since 2022-01-01 for TOP_VOLATILE_N NSE equities."""
-
 from __future__ import annotations
 
 import sys
@@ -7,10 +5,9 @@ from datetime import date, datetime, timezone
 
 import pandas as pd
 
+from backtester.core import build_universe_top_volatile
 from historical_data_fetcher import HistoricalDataProvider, HistoricalDataStore
-from provider.screener import BhavcopyClient, BhavcopyDataFetcher
 from provider.upstox import UpstoxClient
-from provider.upstox.instrument_store import InstrumentStore
 
 _NS = 1_000_000_000
 TOP_VOLATILE_N = 200
@@ -18,25 +15,9 @@ TOP_VOLATILE_N = 200
 
 def main() -> None:
     print(f"[1/3] Computing top {TOP_VOLATILE_N} volatile stocks from NSE bhavcopy...")
-    bhavcopy = BhavcopyClient(BhavcopyDataFetcher())
-    top = bhavcopy.top_volatile(n=TOP_VOLATILE_N)
-    symbols: list[str] = top["symbol"].tolist()
-    print(f"       Found {len(symbols)} symbols "
-          f"(volatility {top['volatility'].min():.2%} – {top['volatility'].max():.2%})")
+    entries, _benchmark = build_universe_top_volatile(n=TOP_VOLATILE_N)
+    print(f"       Resolved {len(entries)} instrument keys")
 
-   
-    # 2. Resolve each symbol to Upstox instrument key
-    print("\n[2/3] Resolving Upstox instrument keys via master contract...")
-    store = InstrumentStore(exchange="NSE")
-    instruments: list[tuple[str, str]] = []
-    for sym in symbols:
-        key = store.resolve(sym)
-        if key:
-            instruments.append((sym, key))
-    print(f"       Resolved {len(instruments)}/{len(symbols)} symbols")
-
-    
-    # 3. Wire up the provider and fetch
     print("\n[3/3] Fetching 5-minute candles (cached via Parquet)...")
     provider = HistoricalDataProvider(
         storage=HistoricalDataStore(),
@@ -48,7 +29,9 @@ def main() -> None:
     interval = "5minute"
 
     records: list[dict] = []
-    for sym, inst_key in instruments:
+    for entry in entries:
+        sym = entry.symbol
+        inst_key = entry.upstox_key
         try:
             df = provider.fetch_historical_data(inst_key, interval, from_date, to_date)
             rows = len(df)

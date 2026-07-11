@@ -4,10 +4,10 @@ import argparse
 
 from backtester.core import StrategySpec, build_universe_liquid
 from backtester.core.runner import run_backtest
-from backtester.strategy_variants import (
+from backtester.strategy_composite import (
     EXIT_METHODS,
-    VARIANT_NAMES,
-    build_variant_configs_for_entry,
+    COMPOSITE_ENTRIES,
+    build_composite_configs_for_entry,
 )
 from utility.file_storage import FileStorage
 
@@ -19,20 +19,13 @@ def register(name: str, spec: StrategySpec) -> None:
 
 
 def _bootstrap() -> None:
-    from backtester.strategy_bullish_engulfing import build_bullish_engulfing_configs
-    register("bullish-engulfing", StrategySpec(
-        strategy_path="backtester.strategy_bullish_engulfing:BullishEngulfingStrategy",
-        config_path="backtester.strategy_bullish_engulfing:BullishEngulfingConfig",
-        config_builder=build_bullish_engulfing_configs,
-    ))
-
-    for entry in VARIANT_NAMES:
+    for entry in COMPOSITE_ENTRIES:
         for exit_ in EXIT_METHODS:
             name = f"{entry}__{exit_}"
             register(name, StrategySpec(
-                strategy_path="backtester.strategy_variants:VariantStrategy",
-                config_path="backtester.strategy_variants:VariantConfig",
-                config_builder=lambda u, c, b, entry=entry, exit_=exit_: build_variant_configs_for_entry(
+                strategy_path="backtester.strategy_composite:CompositeStrategy",
+                config_path="backtester.strategy_composite:CompositeConfig",
+                config_builder=lambda u, c, b, entry=entry, exit_=exit_: build_composite_configs_for_entry(
                     u, c, b, entry_name=entry, exit_method=exit_,
                 ),
             ))

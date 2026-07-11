@@ -5,6 +5,11 @@
 Provider-agnostic historical data fetcher normalised to Nautilus Trader backtest Parquet schema.
 Not an end state — active development, structure will evolve.
 
+## CRITICAL: Nautilus Trader platform rules (ALWAYS follow)
+
+**Never re-implement what Nautilus Trader provides out of the box.** Before writing any indicator, order, sizing, or lifecycle logic in a strategy, read `src/backtester/docs/NAUTILUS_DOCS.md` — it is the verified API surface and source of truth for this repo.
+If you can't find it there, go online and figure out how general nautilus users leverage stuff.
+
 ## Setup
 
 ```bash

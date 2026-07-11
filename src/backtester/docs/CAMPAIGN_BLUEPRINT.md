@@ -84,16 +84,16 @@ git worktree remove ../nautilus-campaign-$DATE
 
 ### Phase 2: Add entry signals
 
-File: `src/backtester/strategy_variants.py`
+File: `src/backtester/strategy_composite.py`
 
-1. Add variant name to `VARIANT_NAMES`
+1. Add variant name to `COMPOSITE_ENTRIES`
 2. If bearish, also add to `SHORT_SIGNALS`
 3. Implement `_signal_<name>(self, prev: Bar, bar: Bar) -> bool`
 4. Add it to the dispatch dict inside `_detect_entry()` or `_detect_entry_short()`
 5. If it's a multi-bar pattern, manage `self._signal_candle` and
    `self._pending_stop_low` / `_pending_stop_high`
 
-Signals are registered automatically by `__main__.py` via `_gen_variants()`.
+Signals are registered automatically by `__main__.py` via `_gen_composite_entries()`.
 Each variant becomes `{name}__{exit_method}` — no manual wiring needed.
 
 ### Phase 3: Smoke test
@@ -198,7 +198,7 @@ If train is +200% and val is -20%:
 
 | File | Role |
 |---|---|
-| `src/backtester/strategy_variants.py` | All entry signals, exit methods, variant configs. Edit this to add/modify strategies. |
+| `src/backtester/strategy_composite.py` | All entry signals, exit methods, variant configs. Edit this to add/modify strategies. |
 | `src/backtester/__main__.py` | CLI entry point. Auto-registers all variants — usually no edits needed. |
 | `src/backtester/batch_test.py` | Batch runner for subagent parallelisation. Training dates hardcoded inside. |
 | `src/backtester/core/runner.py` | Orchestrator. Keep unchanged during campaigns. |

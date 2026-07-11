@@ -10,8 +10,8 @@ from backtester.core.runner import run_backtest
 from backtester.core.models import StrategySpec
 from utility.file_storage import FileStorage
 
-from backtester.strategy_variants import VARIANT_NAMES, EXIT_METHODS
-from backtester.strategy_variants import build_variant_configs_for_entry
+from backtester.strategy_composite import COMPOSITE_ENTRIES, EXIT_METHODS
+from backtester.strategy_composite import build_composite_configs_for_entry
 
 
 def run_one_variant(
@@ -30,9 +30,9 @@ def run_one_variant(
         return {"variant": name, "error": "empty universe"}
 
     spec = StrategySpec(
-        strategy_path="backtester.strategy_variants:VariantStrategy",
-        config_path="backtester.strategy_variants:VariantConfig",
-        config_builder=lambda u, c, b: build_variant_configs_for_entry(
+        strategy_path="backtester.strategy_composite:CompositeStrategy",
+        config_path="backtester.strategy_composite:CompositeConfig",
+        config_builder=lambda u, c, b: build_composite_configs_for_entry(
             u, c, b, entry_name=entry, exit_method=exit_,
         ),
     )
@@ -67,7 +67,7 @@ def run_one_variant(
 
 def main() -> None:
     variants: list[tuple[str, str, str]] = []
-    for entry in VARIANT_NAMES:
+    for entry in COMPOSITE_ENTRIES:
         for exit_ in EXIT_METHODS:
             variants.append((f"{entry}__{exit_}", entry, exit_))
 
