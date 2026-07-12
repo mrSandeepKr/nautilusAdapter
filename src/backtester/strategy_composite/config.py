@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from nautilus_trader.trading.config import StrategyConfig
+from backtester.core.base_strategy import BaseConfig
 
 
-class CompositeConfig(StrategyConfig, frozen=True, kw_only=True):
+class CompositeConfig(BaseConfig, frozen=True, kw_only=True):
     instrument_id_str: str
     bar_type_str: str
     risk_percent: str
@@ -16,6 +16,6 @@ class CompositeConfig(StrategyConfig, frozen=True, kw_only=True):
     filters: list[str] = []
     time_filter_start: str = "09:45"
     time_filter_end: str = "14:30"
-    force_eod_close: bool = True
+    force_eod_close: bool
     trade_direction: str = "LONG"
     order_id_tag: str

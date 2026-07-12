@@ -22,14 +22,14 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.risk.sizing import FixedRiskSizer
-from nautilus_trader.trading.strategy import Strategy
 
 from .config import CompositeConfig
 from .exits import ExitMixin
 from .signals import SignalMixin
+from backtester.core.base_strategy import BaseStrategy
 
 
-class CompositeStrategy(Strategy, SignalMixin, ExitMixin):
+class CompositeStrategy(BaseStrategy, SignalMixin, ExitMixin):
 
     def __init__(self, config: CompositeConfig) -> None:
         super().__init__(config)
@@ -71,6 +71,10 @@ class CompositeStrategy(Strategy, SignalMixin, ExitMixin):
         self._bb_bandwidth_curr = None
         self._entry_bar = None
         self._entry_price = None
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        return self._instrument_id
 
     def on_start(self) -> None:
         self._instrument = self.cache.instrument(self._instrument_id)
@@ -144,11 +148,7 @@ class CompositeStrategy(Strategy, SignalMixin, ExitMixin):
         return self.macd.value
 
     def _to_ist(self, bar: Bar) -> pd.Timestamp:
-        return pd.Timestamp(bar.ts_event, unit='ns', tz='Asia/Kolkata')
-
-    def _is_market_closing(self, bar: Bar) -> bool:
-        dt = self._to_ist(bar)
-        return dt.hour > 15 or (dt.hour == 15 and dt.minute >= 15)
+        return pd.Timestamp(bar.ts_init, unit='ns', tz='Asia/Kolkata')
 
     def _allow_entry(self, bar: Bar) -> bool:
         dt = self._to_ist(bar)
@@ -193,13 +193,11 @@ class CompositeStrategy(Strategy, SignalMixin, ExitMixin):
             return False
         return fn(prev, bar)
 
-    def on_bar(self, bar: Bar) -> None:
+    def _handle_bar(self, bar: Bar) -> None:
         if self._instrument is None or not self.indicators_initialized():
             return
 
         if not self.portfolio.is_flat(self._instrument_id):
-            if self.config.force_eod_close and self._is_market_closing(bar):
-                self._exit_position(bar)
             return
 
         prev = self._prev_bar
@@ -344,10 +342,3 @@ class CompositeStrategy(Strategy, SignalMixin, ExitMixin):
         self._signal_candle = None
         self._pending_stop_low = None
         self._pending_stop_high = None
-
-    def _exit_position(self, bar: Bar) -> None:
-        self.close_all_positions(
-            self._instrument_id,
-            reduce_only=True,
-            tags=["EOD_SQUARE_OFF"],
-        )

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from provider.screener.bhavcopy.client import BhavcopyClient
 from provider.screener.bhavcopy.data_fetcher import BhavcopyDataFetcher
+from provider.screener.nse_data.client import NseData
 from provider.upstox.instrument_store import InstrumentStore
 
 from backtester.core.models import BenchmarkEntry, UniverseEntry
@@ -100,3 +101,10 @@ def _resolve_entry_eq(store: InstrumentStore, symbol: str) -> UniverseEntry | No
                 isin=r.get("isin"),
             )
     return None
+
+
+def build_universe_nifty50() -> tuple[list[UniverseEntry], BenchmarkEntry]:
+    store = InstrumentStore()
+    symbols = NseData.nifty_50()
+    entries = [e for s in symbols if (e := _resolve_entry_eq(store, s)) is not None]
+    return entries, _benchmark_entry(store)

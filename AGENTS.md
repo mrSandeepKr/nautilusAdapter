@@ -65,6 +65,7 @@ If adding one, match the `src/` layout and `pyproject.toml` build config.
 - **Leverage existing functions** — reuse helpers from `utility/`, `settings.py`, `HistoricalDataStore`, etc. Don't duplicate logic (e.g. use `empty_nautilus_frame()`, `FileStorage`, `AppSettings`/`get_upstox_settings()`).
 - **Separation of concern** — `HistoricalDataStore` does Parquet I/O only; `HistoricalDataProvider` orchestrates cache-or-fetch; providers implement `HistoricalDataFetcher` Protocol and must NOT persist to disk. Keep layers distinct.
 - **No `Optional` types** — use bare `| None` union syntax (PEP 604). Avoid `Optional[...]`, avoid `typing.Optional`.
+- **Use `enum.StrEnum` for fixed string choices** — never pass raw strings when an enum would constrain the value. All callers use the enum, not string literals.
 
 Other conventions:
 * Uses `src/` layout with `[tool.setuptools.packages.find] where = ["src"]`

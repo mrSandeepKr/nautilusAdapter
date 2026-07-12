@@ -17,12 +17,10 @@ from nautilus_trader.trading.config import ImportableStrategyConfig
 
 from backtester.core.benchmark import build_benchmark, load_benchmark_returns
 from backtester.core.data_loader import bar_spec_str, build_catalog
-from backtester.core.models import BenchmarkEntry, StrategySpec, UniverseEntry
+from backtester.core.models import BenchmarkEntry, StrategySpec, TradeStyle, TRADE_STYLE_CONFIGS, UniverseEntry
 from backtester.core.report_maker import make_report
 
 _DATA_CLS = "nautilus_trader.model.data:Bar"
-_FEE_MODEL_PATH = "backtester.core.fees:NseFeeModel"
-_FEE_CONFIG_PATH = "backtester.core.fees:NseFeeModelConfig"
 
 
 def _build_run_config(
@@ -34,8 +32,10 @@ def _build_run_config(
     log_file_name: str,
     bar_spec: str,
     total_corpus: str,
+    trade_style: TradeStyle,
     verbose: bool = False,
 ) -> BacktestRunConfig:
+    style = TRADE_STYLE_CONFIGS[trade_style]
     return BacktestRunConfig(
         venues=[BacktestVenueConfig(
             name="NSE",
@@ -43,12 +43,12 @@ def _build_run_config(
             account_type="MARGIN",
             base_currency="INR",
             starting_balances=[total_corpus],
-            default_leverage=5,
+            default_leverage=style["default_leverage"],
             bar_execution=True,
             bar_adaptive_high_low_ordering=True,
             fee_model=ImportableFeeModelConfig(
-                fee_model_path=_FEE_MODEL_PATH,
-                config_path=_FEE_CONFIG_PATH,
+                fee_model_path="backtester.core.fees:NseFeeModel",
+                config_path=style["fee_config"],
                 config={},
             ),
         )],
@@ -108,26 +108,27 @@ def run_backtest(
     total_corpus: str,
     catalog_path: Path,
     output_dir: Path,
+    trade_style: TradeStyle,
     verbose: bool = False,
 ) -> dict[str, tuple[str, str]]:
 
     print(f"[{len(universe)} instruments · {interval} · {t0}–{t1}]")
 
     print(f"Building/loading catalog ... ", end="", flush=True)
-    catalog = build_catalog(universe, catalog_path, t0, t1, interval)
+    catalog = build_catalog(universe, catalog_path, t0, t1, interval, trade_style=trade_style)
     build_benchmark(catalog, benchmark, interval, t0, t1)
     print("done")
 
     bs = bar_spec_str(interval)
     close_prices = _last_close_prices(catalog, universe, bs)
-    strategy_configs = spec.config_builder(universe, close_prices, bs)
+    strategy_configs = spec.config_builder(universe, close_prices, bs, trade_style)
 
     print(f"Train ({t0}–{t_split}) .............................. ", end="", flush=True)
     train_run = _build_run_config(
-        catalog_path, universe, strategy_configs, t0, t_split, "train.log", bs, total_corpus, verbose,
+        catalog_path, universe, strategy_configs, t0, t_split, "train.log", bs, total_corpus, trade_style, verbose,
     )
     validate_run = _build_run_config(
-        catalog_path, universe, strategy_configs, t_split, t1, "validate.log", bs, total_corpus, verbose,
+        catalog_path, universe, strategy_configs, t_split, t1, "validate.log", bs, total_corpus, trade_style, verbose,
     )
 
     node = BacktestNode(configs=[train_run, validate_run])

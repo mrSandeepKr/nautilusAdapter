@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
-from backtester.core.models import UniverseEntry
+from backtester.core.models import TradeStyle, UniverseEntry
 
 from .registry import _COMPOSITE_ENTRIES
 
@@ -11,6 +11,7 @@ def build_composite_configs_for_entry(
     universe: list[UniverseEntry],
     _close_prices: dict[str, float],
     bar_spec: str,
+    trade_style: TradeStyle,
     *,
     entry_name: str,
     exit_method: str,
@@ -18,6 +19,7 @@ def build_composite_configs_for_entry(
     atr_mult: float | None = None,
     filter_overrides: list[str] | None = None,
 ) -> list[ImportableStrategyConfig]:
+    force_eod = trade_style == TradeStyle.INTRADAY
     configs: list[ImportableStrategyConfig] = []
     for i, entry in enumerate(universe):
         for v in _COMPOSITE_ENTRIES:
@@ -46,7 +48,7 @@ def build_composite_configs_for_entry(
                     "order_id_tag": f"{v['order_id_tag']}_{i:03d}",
                     "log_events": False,
                     "log_commands": False,
-                    "force_eod_close": True,
+                    "force_eod_close": force_eod,
                     "trade_direction": v.get("trade_direction", "LONG"),
                 },
             ))
